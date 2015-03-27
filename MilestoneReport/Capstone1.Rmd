@@ -1,0 +1,396 @@
+---
+title: "Data Science Capstone Project - Milestone Report"
+author: "Guido Gallopyn"
+date: "March 23, 2015"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE)
+```
+
+``` {r packages,echo=FALSE, warning=FALSE,message=FALSE}
+setwd("~/Documents/Courses/DataScience/CapStone")
+
+library(tm)
+library(plyr)
+library(dplyr)
+library(knitr)
+
+Corpus.summary <- function(corpus) {
+  d <- ldply(lapply(corpus, function(x) { ellen <- nchar(content(x))
+                                          wordlist <- lapply(content(x), RWeka::WordTokenizer)
+                                          tokens <- unlist(wordlist)
+                                          data.frame(TextDocument=meta(x,"id"), NLines=length(content(x)),
+                                                     NWords=length(tokens), 
+                                                     NChars=sum(ellen), 
+                                                     AvgLineLen=round(mean(ellen)),
+                                                     AvgWordsLine=round(mean(sapply(wordlist,length)),1),
+                                                     NVoc=length(unique(tokens)),
+                                                     AvgWordLen=round(mean(nchar(tokens)),2)) }))
+  big <-Reduce(c,Map(content,corpus))
+  ellen <- nchar(big)
+  wordlist <- lapply(big, RWeka::WordTokenizer)
+  tokens <- unlist(wordlist)
+  rbind(d,data.frame(TextDocument="Total Corpus", NLines=length(big),
+                     NWords=length(tokens), NChars=sum(ellen), 
+                     AvgLineLen=round(mean(ellen)),
+                     AvgWordsLine=round(mean(sapply(wordlist,length)),1),
+                     NVoc=length(unique(tokens)),
+                     AvgWordLen=round(mean(nchar(tokens)),2)))
+}
+```
+
+## Synopsis
+
+This milestone report covers my progress to date on the Johns Hopkins/Coursera Data Science Capstone Project. 
+
+The Capstone project data was downloaded, and basic data corpus statistics are presented. A number of R packages for text mining and natural language processing were explored and the tm package was selected as the framework to base this project on. Several tokenizers were evaluated for quality and speed and RWeka tokenizer was selected in combination with the tm text mining framework.  An exploratory analysis of the text corpus provides provided insight in word and n-gram statistics including their distributions. We also provide some insight in the number of words that will be needed to cover text prediction of US English. 
+Finally, we provide our thinking on how to proceed in the second phase of this project.  
+
+## Loading and preprocessing the data
+
+The [Capstone Dataset](https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip) was downloaded on March 12, 2015 from the Coursera site. The data set contains news, blogs and twitter data in four languages: US English, German, Russian and Finish. 
+
+Basic statistics for the US English corpus files are shown below,
+
+``` {r dir, echo=FALSE}
+system("ls -l ../data/final/en_US/*", intern = TRUE)
+```
+
+In addition, a [bad word list](http://www.cs.cmu.edu/~biglou/resources/bad-words.txt) was downloaded from Carnegie Mellon University Luis von Ahn's Research Group. The list contains 1,300+ English terms that could be found offensive and that may be best avoided as an outcome of a text predictor.
+
+Finally, a [US English dictionary](http://www-01.sil.org/linguistics/wordlists/english/wordlist/wordsEn.txt) with 100,000+ US English words was downloaded from the Summer Institute of Linguistics. The dictionary is used for data cleaning purposes.
+
+## Exploratory analysis
+
+For this analysis, the R packages 
+[tm](http://cran.r-project.org/web/packages/tm/index.html), 
+[NLP](http://cran.r-project.org/web/packages/NLP/index.html), 
+[RWeka](http://cran.r-project.org/web/packages/RWeka/index.html), 
+[OpenNLP](http://cran.r-project.org/web/packages/openNLP/index.html), 
+[plyr](http://cran.r-project.org/web/packages/plyr/index.html),
+[dplyr](http://cran.r-project.org/web/packages/dplyr/index.html),
+[ggplot2](http://docs.ggplot2.org/current/) and 
+[wordcloud](http://cran.r-project.org/web/packages/wordcloud/index.html) 
+are used.
+
+### 1. Sub-sampeling the US-English corpus
+
+The summary statistics for the US English corpus are below, there are over 100 million words in the corpus, and over 1.25 million unique words are observed. Observe that Tweets have the highest number of unique words used for about the same size corpus as Blogs and News, Tweets have much shorter number of words per line than Blogs and News, and on average shorter words. None of this is a surprise.   
+
+``` {r tab1, echo=FALSE, results='asis'}
+load("tab1.RData") # load table
+knitr::kable(tab)
+```
+
+For data exploration purposes,a 1% subset of the English data-set was created and used.
+
+The 100 million word US English corpus is large, but it can be read in memory on a MacPro with 8 GByte RAM with standard tm functionality as volatile Corpus, and take a 1% random sample of the Corpus (for Blogs, News and Tweets seperately) with the tm map function and then save it. Note that tm also has a Permanent Corpus functionality that stores documents outside of R in a database, this was not explored but functionality that allows to work with text corpora without loading all in memory is needed for much larger corpora. 
+
+``` {r subsample, eval=FALSE}
+corpus <- VCorpus(DirSource("../data/final/en_US/"))
+small <- tm_map(corpus , content_transformer(function(x) x[sample(length(x),length(x)/100)])) 
+writeCorpus(small, path = "../data/small/en_US/")
+```
+
+Summary statistics for the smaller US English corpus are shown below, note that the number of words as now about 1 million, and the the unique number of words is reduced to about 75000, average line length, average words per line and average word length have not changed.
+
+``` {r tab2, echo=FALSE, results='asis'}
+kable(Corpus.summary(small))
+```
+
+### 2. Exploring tokenization on small subset for English
+
+Here we evaluate 5 tokenizers from different R packages for quality and speed.
+
+- strsplit: is a simple white space based Regular Expression tokenizer.
+
+- MCtokenizer: is the MC_tokenizer tokenizer that comes with the tm package.
+
+- WordTokenizer: is the word tokenizer that comes with the RWeka package implemented in java.
+
+- wordpunct_tokenizer: is the word tokenizer that comes with the NLP package.
+
+- Maxent_Word_Token_Annotator: is the Maximum Entropy tokenizers that come with the OpenNLP package implemented in java.
+
+The results below shows how an example sentence is tokenized by each
+
+``` {r tokeneval,echo=FALSE}
+library(openNLP)
+gg_tokenizer <- function(f) lapply(f, function(s) { temp <- as.String(s); temp[wordpunct_tokenizer(temp)] })
+
+gg_tokenizer2 <- function(f) {
+  pipeline <- list(Maxent_Sent_Token_Annotator(), Maxent_Word_Token_Annotator() )
+  lapply(f, function(s) { s.temp <- as.String(s); 
+                          a.temp <- annotate(s.temp, pipeline)
+                          s.temp[a.temp[a.temp$type == "word"]]})}
+
+Tokenizers <- list("strsplit" = function(x) unlist(strsplit(x, "[[:space:]]+")), 
+                   "tm::MC_tokenizer" = MC_tokenizer,
+                   "RWeka::WordTokenizer" = RWeka::WordTokenizer,
+                   "NLP::wordpunct_tokenizer"=function(x) unlist(gg_tokenizer(x)),
+                   "openNLP::Maxent_Word_Token_Annotator" = function(x) unlist(gg_tokenizer2(x)))  
+
+(sentence <- "Label: Double-Dekker $123.55. Out of stock!!!")
+lapply(Tokenizers, function(f) f(sentence))
+detach("package:openNLP", unload=TRUE)
+```
+
+In addition we have measured elapse time, for these tokenizers to process the sub-sampled US English corpus with 1 million words, on a MacPro (4 core 2.4 GHz Intel Core i7, 8GByte). Elapse Time is measured in seconds.
+
+``` {r tab3, echo=FALSE, results='asis'}
+load("tab3.RData") # load table
+knitr::kable(tab)
+```
+
+the RWeka tokenizer is the fastest of the 5 tokenizers evaluated, it is even faster than asimple white space regular expression tokenizer with the R strinsplit function. It tokenizes 1 million words in under a second. With this excellent speed, it provides decent quality and control over the tokenization process, it is implemented in java with an R interface and supports multi-core processing. In addition, the RWeka package also contains a NGram tokenizer, with the same controls. 
+
+Note that the openNLP tokenizer gives a superior tokenization quality especialy on some semantic entities such as numbers, names, cities etc, but it is 2 orders of magnitude slower then RWeka WordTokenizer. As prediction of names, numbers and other named entities is outside of the scope of this project, this more advanced tokenization based on annotation piplelines with Maximum Entropy annotators senteces, words, etc is overkill.  
+
+__Conclusion__: In the further exploration, the RWeka tokenizers were used. 
+
+### 3. Corpus cleaning and profanity filtering
+
+Findings from a sample corpus inspection 
+
+- there are many miss-spelled and/or abbreviated words in the corpus, to a larger extend in Twitter. As strategy will be needed to prevent such words as an outcome from the predictor.
+
+- there are foreign words especially in the English Blog corpus, they appear to have low frequency. 
+
+- there are non ASCII character sequences. 
+
+- there long tokens in the corpus, sometimes with plain gibberish.
+
+- there are many "semantic entities" such as numbers, person names, URLs, hash-tags, short messaging shorthand
+
+- There are profane words.  
+
+We will consider using a dictionaries to filter words, in combination with a word frequency filter and an occurrence threshold. To avoid picking up bad words from social media or internet based corpora we use a sizable bad word list.
+
+Below is a preliminary text cleaning text processing sequence, converts all words to lower case, remove punctuation and numbers, and finally removes bad words.  
+
+``` {r cleaning}
+small <- VCorpus(DirSource("../data/small/en_US/"))
+small <- tm_map(small, content_transformer(function(x) iconv(x, from="latin1", to="ASCII", sub="")))
+small <- tm_map(small, content_transformer(tolower))
+small <- tm_map(small, removePunctuation, preserve_intra_word_dashes = TRUE)
+small <- tm_map(small, removeNumbers)
+small <- tm_map(small, removeWords, readLines("../data/en-US-bad-words.txt"))
+small <- tm_map(small, stripWhitespace)
+```
+
+``` {r tab4, echo=FALSE, results='asis'}
+kable(Corpus.summary(small))
+```
+
+### 4. Word Statistics
+
+Some words are more frequent than others, here I explore what the most frequent words are in the sub-sampled US English corpus and explore the distributions of the word frequencies.
+
+The word frequencies for Blogs, News and Yweets can be readily be found by constructing a Term Document Matrix, part of the tm package functionality, and provides a sparse matrix representation of term (word) frequencies, organized with terms in rows and documents in columns. Not every word occurs in every document, the number of zeros in the matrix divided by the total elements of the matrix is the sparsity.  
+
+``` {r counting}
+options(mc.cores=1) # RWeka bug workaround 
+tdm <- TermDocumentMatrix(small, control=list(tokenize =  RWeka::WordTokenizer, 
+                                              wordLengths = c(1, Inf)))
+print(tdm)  
+```
+
+The most frequent words in this corpus are not surprisingly the English stop-words
+``` {r freqwords}
+head(sort(slam::row_sums(tdm), decreasing=TRUE),12)
+```
+
+After removing stop-words, the most frequent words in this corpus 
+``` {r freqwords2}
+tdm2 <- TermDocumentMatrix(small,control= list(tokenize =  RWeka::WordTokenizer, 
+                                               wordLengths = c(1, Inf),
+                                               stopwords = stopwords("english")))
+head(sort(slam::row_sums(tdm2), decreasing=TRUE),12)
+```
+
+Text corpora can be visualized with **wordcloud plots**, which display the most frequent words with size and color attributes indicating word frequency. 
+
+In the word clouds below, we see the three corpora: from left to right Blogs, News and Tweets. Observe that there is no significant difference in the most frequent words in the three corpora.
+The second row, we see word clouds for the same after removing English stop-words, and now the most frequent words are different between Blogs, News and Tweets.
+
+``` {r wordcloud, warning=FALSE, message=FALSE}
+freqnrank <- function(fdtm) {
+  v <- sort(slam::row_sums(fdtm[findFreqTerms(fdtm,1),]), decreasing=TRUE)
+  data.frame(Word=names(v), Freq=v, RelFreq=v/sum(v), Rank=rank(-v), Corpus=Docs(fdtm)[1])
+}
+
+d <- ldply(lapply(Docs(tdm), function(x) freqnrank(tdm[,x])))
+d2 <- ldply(lapply(Docs(tdm2), function(x) freqnrank(tdm2[,x])))
+
+par(mfrow=c(2,3))
+library(wordcloud)
+for (x in Docs(tdm)) with(subset(d, Corpus == x),
+                         wordcloud(Word, Freq, max.words=75, scale=c(5,2), 
+                                   random.order=FALSE, colors=brewer.pal(8,"Dark2")))
+for (x in Docs(tdm2)) with(subset(d2, Corpus == x),
+                          wordcloud(Word, Freq, max.words=75, scale=c(5,2), 
+                                    random.order=FALSE, colors=brewer.pal(8,"Dark2")))
+```
+
+[Zipf's law](http://en.wikipedia.org/wiki/Zipf%27s_law) states that given some corpus of natural language utterances, the frequency of any word is inversely proportional to its rank in the frequency table, or, more generally, that the probability mass function of the term frequencies is of the form $p = c k^{-β}$, where k is the rank of the term (taken from the most to the least frequent one). 
+
+In the plot below I show the degree to which Zipf's Law holds for the Blogs, News and Tweets corpus by plotting word probability against the the rank in a log-log scales plot. 
+
+In addition I have fitted of a linear model on the total corpus (log(Probability) ~ log(Rank) using weights 1/Rank). We can observe that Zipf's law fits very well on the three corpora and that the  parameters (c, β) are not significantly different. Moreover we find β = 0.97  iow to a good approximation for the US English corpus, the word probability is $p = c / k$ with k the word rank, and c a constant dependent on the size of the corpus.  
+
+
+``` {r, echo=FALSE, warning=FALSE,message=FALSE }
+library(ggplot2)
+```
+
+```{r Zipf}
+ggplot(d, aes(x=Rank, y=RelFreq, colour=Corpus)) + geom_line() + 
+  scale_y_log10(breaks=10^(-7:0)) + scale_x_log10(breaks=10^(0:5)) +   
+  xlab("Word Rank") + ylab("Word Probability") + 
+  ggtitle("Word probability in function of rank") +
+  stat_smooth(method = "lm", aes(weight=1/Rank),colour="black",linetype=2)
+```
+
+
+### 5. NGram Statistics
+
+In this section I explore the frequencies of 2-grams and 3-grams in the sub-sampled US English data-set and I compare with word (1-gram) frequencies.
+
+The RWeka package contains an NGram Tokenizer that can be configured to count bigrams and trigrams frequencies in the corpus in the form of a Term Document Matrix. The N-Gram frequencies and ranks in the respective corpora can easily be determined, and summarized as shown below. 
+
+``` {r ngrams}
+options(mc.cores=1) # RWeka bug workaround 
+
+bigramTokenizer  <- function(x) RWeka::NGramTokenizer(x, RWeka::Weka_control(min = 2, max = 2))
+trigramTokenizer <- function(x) RWeka::NGramTokenizer(x, RWeka::Weka_control(min = 3, max = 3))
+
+ngrams <- list( 
+  "1gram"=TermDocumentMatrix(small, control=list(tokenize = RWeka::WordTokenizer, wordLengths=c(1, Inf))), 
+  "2gram"=TermDocumentMatrix(small, control=list(tokenize = bigramTokenizer, wordLengths=c(1, Inf))), 
+  "3gram"=TermDocumentMatrix(small, control=list(tokenize = trigramTokenizer, wordLengths=c(1, Inf))) 
+)
+
+# calculate ngram frequencies, probabilities and ranks and combine in one dataframe
+freqnrank <- function(tdm) {
+  v <- sort(slam::row_sums(tdm), decreasing=TRUE)
+  data.frame(Word=names(v), Freq=v, RelFreq=v/sum(v), Rank=rank(-v))
+}
+df <- ldply(lapply(names(ngrams), function(x) transform(freqnrank(ngrams[[x]]), Ngram=x)))
+```
+
+The table below shows the total number of unigrams, bigrams and trigrams in the corpus and the number of unique unigrams, bigrams and trigrams. Note that the unigram, bigram and trigrams are not so different, but that the number of unique N-grams in the corpus significantly increases with N, as would be expected as the total number of bigrams is $O(|V|^2)$ and total number of trigrams  $O(|V|^3)$ with $|V|$ being the vocabulary size (or number of unigrams) 
+
+``` {r ngramtab, echo=FALSE, results='asis'}
+df %>% group_by(Ngram) %>% dplyr::summarise(Count=sum(Freq), Unique=n()) %>% knitr::kable()
+```
+
+The most frequent bigrams and trigrams can again be shown in a wordcloud. As can be observed, the displayed bigrams (left) and trigrams(right) are familiar English word sequences that would be expected.
+
+``` {r ngramscloud, warning=FALSE, message=FALSE}
+par(mfrow=c(1,2))
+with(subset(df, Ngram == "2gram"), wordcloud(Word, Freq, max.words=70, colors=brewer.pal(8,"Dark2")))
+with(subset(df, Ngram == "3gram"), wordcloud(Word, Freq, max.words=50, colors=brewer.pal(8,"Dark2")))
+```
+
+In the plot below I show the degree to which Zipf's law holds for NGrams on the complete corpus by plotting relative Ngram frequency against Ngram rank in a log-log scales. 
+
+``` {r ngramsplot, warning=FALSE,message=FALSE}
+ggplot(df, aes(x=Rank, y=RelFreq, colour=Ngram)) + geom_line() + 
+  scale_y_log10(breaks=10^(-7:0)) + scale_x_log10(breaks=10^(0:5)) +   
+  xlab("NGram Rank") + ylab("NGram Probability Mass") + 
+  ggtitle("NGram Probability in function of their Rank") +
+  stat_smooth(method = "lm", aes(weight=1/Rank, colour=Ngram), linetype=2)
+```
+
+As can be observed, Ngrams in this corpus follow Zipf's law quite well, but do have different parameters (c, β) in $p = c k^{-β}$.
+The exponential decay factor β becomes smaller with N, and the probability of the most frequent ngram (c) decreases with roughly an order of magnitude with N for unigrams, bigrams and trigrams. As N increases, Ngram probability mass fuctions have longer tails.
+
+``` {r ngramlm, echo=FALSE, results='asis'}
+tab5 <- ldply(lapply(levels(df$Ngram), function(n) {
+  cf <- coef(lm(log(RelFreq) ~ log(Rank), data=subset(df,Ngram==n), weights=1/Rank))
+  data.frame(Ngram=n, c=exp(cf[1]), β=-cf[2])
+}))
+kable(tab5)
+```
+
+### 6. Vocabulary size and coverage
+
+An important design parameter for any language modeling, is the vocabulary size to be covered. In this section I explore the relation between the size of a frequency sorted dictionary, and coverage of all word instances in the language. We should note that the considerations made in the Practical Machine Learning course regarding training and evaluation sets are very relevant. If we just estimate coverage on the total data set, we will inevitable find that if we include all observed words in our vocabulary, then we would cover all of data set. This is of course not a good estimate of the word coverage in the language. To get a better estimate, we split the data set in a training and test set. We use a frequency sorted dictionary derived from the training set to determine the coverage  of the test set. 
+
+In the plot below we show the coverage in function of the dictionary size. The blue curve is the coverage estimate obtained with the entire data set, the red curve is a better coverage estimate obtained with a training an evaluation set approach. I also indicate the 50% coverage point and the 90% coverage points.
+
+Essentially 50% of the English language can be covered by about 130 words, to cover 90% we need roughly 8242 words. It also van be observed that increasing the coverage, vocabulary size needs to increase drastically, and that to reach a higher than 96% coverage a language model with over 100,000 words may be needed.
+
+
+```{r coverage}
+# measuring coverage on the entire small data set
+v <- sort(slam::row_sums(tdm), decreasing=TRUE) # words and their frequencies sorted 
+df <- data.frame(Terms=1:length(v), Coverage=cumsum(v)/sum(v))
+
+# measuring coverage with training and test sets
+set.seed(123)
+tmp <- Reduce(c, Map(content, small))
+train <- sample(length(tmp),length(tmp)*0.6) # split the corpus 60/40 training and test set
+corpus <- c( PlainTextDocument(tmp[train], id="training"), 
+             PlainTextDocument(tmp[-train],id="testing") ) # is a VCorpus with training and test sets labled
+rm(tmp)
+
+#now term frequencies on training and test sets
+options(mc.cores=1) # RWeka bug workaround 
+tdm <- TermDocumentMatrix(corpus, control=list(tokenize = RWeka::WordTokenizer, wordLengths=c(1, Inf)))
+
+v.train <- sort(slam::row_sums(tdm[,"training"]), decreasing=TRUE) # training set words and their frequencies sorted
+v.train <- v.train[v.train > 0]                                    # words have to occur at least once
+df <- data.frame(Terms=1:length(v.train), TrainCoverage=cumsum(v.train)/sum(v.train))
+
+lseq <- function(from,to,length.out) round(exp(seq(log(from), log(to), length.out = length.out)))
+df2 <- data.frame(Terms=lseq(1, length(v.train), 100))
+for (n in 1:nrow(df2)) 
+  df2$TestCoverage[n] <- sum(tdm[names(v.train[1:df2$Terms[n]]),"testing"])/sum(tdm[,"testing"])
+
+# get 50% and 90% coverage points
+lin1 <- with(df, approx(TrainCoverage,Terms,c(0.5, 0.9)))
+lin2 <- with(df2, approx(TestCoverage,Terms,c(0.5, 0.9)))
+
+ggplot(df, aes(x=Terms)) + 
+  geom_line(aes(y=TrainCoverage), colour="blue") + 
+  geom_line(data=df2,aes(y=TestCoverage), colour="red") +
+  scale_x_log10(breaks=10^(0:4)) + scale_y_continuous(breaks=(0:10)/10) +
+  xlab("Dictionary Size") + ylab("Coverage") + ggtitle("Language Coverage in function of Dictionary Size") +
+  geom_hline(yintercept = c(lin1$x,df2$TestCoverage[nrow(df2)]),linetype="dashed") +
+  geom_vline(xintercept = c(lin1$y,lin2$y,length(v.train)),linetype="dashed") + 
+  ggplot2::annotate("text", x = lin1$y, y = .1, label = round(lin1$y), color="blue") +
+  ggplot2::annotate("text", x = lin2$y, y = .15, label = round(lin2$y), color="red") +
+  ggplot2::annotate("text", x = 1, y = .97, label = round(df2$TestCoverage[nrow(df2)],2), color="red")
+```
+
+## Plans for a text prediction algorithm and Shiny app
+
+My plans for the next phase of this project involve the following:
+
+- determine the best data structure in R to store NGram language models
+
+- explore different LM training and smoothing algorithms
+
+- design a training and prediction function conform with R modeling
+
+- design a strategy to deal with out of vocabulary words as predictors
+
+- determine N (in Ngram) and 
+
+- tune LM size and training set size for the Ngrams with a training, evaluation and test set approach. 
+
+- if time allows, explore stemming and Part of Speech tagging and effects on predition performance.
+
+- develop a LM training recipe from corpus to LM model
+
+- train an LM on the full size of the English data set and measure performance (if possible)
+
+- create a shiny app that uses the prediction function in conjunction with an LM model.
+
+## Conclusion
+
+With my  speech recognition and natural language processing background the domain of language modeling and text prediction is very familiar to me, however R and R packages for language modeling are new to me. I spend a lot of time familiarizing myself with tm, RWeka, NLP and OpenNLP packages and found them a good match for small data set and I'm curious how they will scale to larger corpora and how to best circumnavigate the in-memory model of the R framework.
+
