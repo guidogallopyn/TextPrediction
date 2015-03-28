@@ -13,6 +13,19 @@ ngtail <- function(ng,k=1) { tmp <- unlist(strsplit(ng," ",fixed=TRUE))
 ngfirst <- function(ng,k=1) return(paste(head(unlist(strsplit(ng," ",fixed=TRUE)),k),collapse=" ")) # first k words  of n gram 
 nglast  <- function(ng,k=1) return(paste(tail(unlist(strsplit(ng," ",fixed=TRUE)),k),collapse=" ")) # last k words of n gram 
 
+# good-turing discounting factor (without frequency smoothing, just linear interpolation)
+GoodTuringDisc <- function (cnt) {
+  tab <- table(cnt)
+  (1 + 1/cnt) * approx(as.integer(names(tab)),tab,cnt+1)$y / approx(as.integer(names(tab)),tab,cnt)$y
+}
+
+# good-turing discounting with smoothing 
+GoodTuringDisc <- function (cnt) {
+  tab <- transform(as.data.frame(table(cnt)),cnt=as.integer(cnt)) 
+  fit <- lm(log(Freq) ~ log(cnt), data=tab)
+  (1 + 1/cnt) * exp(predict(fit, data.frame(cnt=cnt+1))) / exp(predict(fit, data.frame(cnt=cnt)))
+}
+
 # NGram LM R class constructor
 NGramLM <- function(corpus, N=2, threshold=0) 
 {
@@ -25,13 +38,17 @@ NGramLM <- function(corpus, N=2, threshold=0)
                                            control=list( tokenize = function(x) RWeka::NGramTokenizer(x, RWeka::Weka_control(min = n, max = n)),
                                                          wordLengths=c(1, Inf))))
     cnt <- cnt[cnt > threshold]  
-    model[[paste0(n,"-grams")]] <- hash(cnt) 
+    model[[paste0(n,"-grams")]] <- hash(cnt)
+    model[[paste0("disc",n)]] <- hash(GoodTuringDisc(cnt))
   }
   
   # Katz back-off probability calculation
   print(paste0("Calculating ", getNumberNGrams(model,1), " unigram probabilities..."))
   V <- sum(values(model[["1-grams"]]))
-  model[["Pbo1"]] <- hash(lapply(model[["1-grams"]], function (x) x/V))
+  ngkeys <- keys(model[["1-grams"]])
+  model[["Pbo1"]] <- hash(Map(function (cnt,d) d * cnt / V, 
+                              values(model[["1-grams"]],keys=ngkeys), 
+                              values(model[["disc1"]],keys=ngkeys)))
   if(N<2) return(model)
   
   # hash table with followers (n-1)gram + word -> ngram followers
@@ -54,11 +71,14 @@ NGramLM <- function(corpus, N=2, threshold=0)
                keys(model[[paste0(n-1,"-grams")]]) ))
     
     print(paste0("Calculating ",getNumberNGrams(model,n)," ",n,"-gram probabilities..."))
-    model[[paste0("Pbo",n)]] <- hash(Map(function (ng,cnt) cnt / model[[paste0(n-1,"-grams")]][[ nghead(ng) ]],
-                                         keys(model[[paste0(n,"-grams")]]), values(model[[paste0(n,"-grams")]])))
-    
+    ngkeys <- keys(model[[paste0(n,"-grams")]])
+    model[[paste0("Pbo",n)]] <- hash(Map(function (ng,cnt,d) d * cnt / model[[paste0(n-1,"-grams")]][[ nghead(ng) ]],
+                                         ngkeys, 
+                                         values(model[[paste0(n,"-grams")]],keys=ngkeys),
+                                         values(model[[paste0("disc",n)]],keys=ngkeys))) 
   }
   clear(followers)
+  # we can clear counts and discounts as well actually, we keep them for debugging
   return(model)
 }
 

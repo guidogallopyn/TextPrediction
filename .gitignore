@@ -44,6 +44,7 @@ Thumbs.db
 ###################
 data/
 models/
+models.old/
 Capstone1.knit.md
 MilestoneReport/.RData
 MilestoneReport/Capstone1.html

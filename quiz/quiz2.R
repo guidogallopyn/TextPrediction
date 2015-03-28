@@ -41,27 +41,26 @@ alternatives <- list(
   c("soda", "cheese","pretzels","beer"),        # beer
   c("best", "universe", "world", "most"),       # world
   c("happiest","smelliest","bluest","saddest"), # happiest
-  c("referees","players","crowd","defense"),    # not crowd
+  c("referees","players","crowd","defense"),    # not crowd ==> players?
   c("mall","movies","beach","grocery"),         # beach
   c("motorcycle","way","horse","phone"),        # way
   c("years","thing","weeks","time"),            # time
-  c("ears","toes","eyes","fingers"),            # not eyes, likely fingers
-  c("hard","sad","worse","bad"),                # not hard
-  c("callous","asleep","insensitive","insane")  # not asleep
+  c("ears","toes","eyes","fingers"),            # not eyes ==> fingers
+  c("hard","sad","worse","bad"),                # not hard ==> bad
+  c("callous","asleep","insensitive","insane")  # not asleep ==> insance
 )
 
 
 
 # training ngram model
-mod <- train(control=list(data="large",N=3, method="Katz", smthreshold=3))
-
-
-
+mod <- train(control=list(data="final",N=3, method="Katz", threshold=5))
 
 # generate quiz results
-Map(function(x,y) predict(mod,x,y), quiz, alternatives) # 
+Map(function(x,y) predict(mod,x,y), quiz, alternatives) # 7/10
 
-# analysis
+
+# error analysis: 3 errors is where no trigrams occur and bigram probs are a close call
+# what is best approach? train on more data, or LM smoothing
 sum(sapply(quiz, function(x) has.key(nglast(x,3),mod[["3-grams"]])))/10 # 3 gram coverage in quiz set
 sum(sapply(quiz, function(x) has.key(nglast(x,2),mod[["2-grams"]])))/10 # 2 gram coverage in quiz set
 sum(sapply(quiz, function(x) has.key(nglast(x,1),mod[["1-grams"]])))/10 # 1 gram coverage in quiz set
@@ -85,4 +84,6 @@ mod[["Pbo2"]][["the defense"]]
 mod[["Pbo2"]][["little eyes"]]
 mod[["Pbo2"]][["little fingers"]]
 
+mod[["Pbo2"]][["be asleep"]]
+mod[["Pbo2"]][["be insane"]]
 
