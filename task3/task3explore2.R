@@ -15,8 +15,6 @@ library(hash)
 # 1) efficiently store a sparse matrix p(wj|wi...wk) or multi dim for n-gram
 # 2) fast retrieval of argmax  p(wj|wi...wk) given p(wj|wi...wk)
 
-
-
 options(mc.cores=1) # RWeka bug workaround 
 
 Corpus.summary <- function(corpus) 
@@ -513,31 +511,6 @@ getNumberNGrams(mod,2)
 getNumberNGrams(mod,3)
 save(mod,file="LM.en_US.small.katz.3.5.r3.RData")
 Map(function(x,y) predict(mod,x,y), quiz, alternatives) # 6/10 on quiz, decent training speed 2.1Mb
-
-
-
-
-# old
-print(paste0("Calculating ",getNumberNGrams(model,2)," bigram sets...")) 
-for( ng in keys(model[[paste0(n,"-grams")]])) {
-  key <- nghead(ng)
-  followers[[ key ]] <- append(followers[[ key ]], ng)  
-}
-
-print(paste0("Calculating ",getNumberNGrams(model,n-1)," ",n-1,"-gram back off weights..."))
-model[[paste0("alpha",n-1)]] <- hash(Map(function (start)
-  ifelse(!has.key(start, followers), 
-         1, # no following bigrams
-         (1 - sum(values(model[["2-grams"]], keys=followers[[start]])) / model[["1-grams"]][[start]]) /
-           (1 - sum(values(model[["Pbo1"]], keys=sapply(followers[[start]], ngtail))))),
-  getWords(model)))
-
-print(paste0("Calculating ",getNumberNGrams(model,2)," bigram probabilities..."))
-model[["Pbo2"]] <- hash(Map(function (bg,cnt) cnt / model[["1-grams"]][[ nghead(bg) ]],
-                            keys(model[["2-grams"]]), values(model[["2-grams"]])))
-
-if(N<3) return(model)
-
 
 
 

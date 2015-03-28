@@ -27,7 +27,19 @@ Corpus.summary <- function(corpus) as.data.frame(t(sapply(corpus, function(x) c(
                                                                                 NWords=length(words(x)),
                                                                                 NChars=sum(nchar(content(x)))) ) ))
 # summary statistics
-Corpus.summary(eng)
+#Corpus.summary(eng)
+
+# subsample the corpus 10%
+set.seed(123)
+large <- tm_map(eng, content_transformer(function(x) x[sample(length(x),length(x)/10)])) 
+writeCorpus(large, path = "data/large/en_US")
+Corpus.summary(large)
+
+# subsample the corpus 3%
+set.seed(123)
+medium <- tm_map(large, content_transformer(function(x) x[sample(length(x),length(x)/3.33)])) 
+writeCorpus(medium, path = "data/medium/en_US")
+Corpus.summary(medium)
 
 # subsample the corpus 1%
 set.seed(123)
@@ -43,6 +55,10 @@ writeCorpus(small, path = "data/small/en_US/")
 ## now create an even smaller subset
 set.seed(123)
 micro <- tm_map(small, content_transformer(function(x) x[sample(length(x),length(x)/1000)])) 
-
 writeCorpus(micro, path = "data/micro/en_US")
+
+# summary statistics
+Corpus.summary(eng)
+
+
 
