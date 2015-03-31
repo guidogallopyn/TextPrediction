@@ -21,7 +21,9 @@ Corpus.summary <- function(corpus)
 #
 # load the NGram class and helper functions 
 #
-source("NGramLM.R")
+source("NGramLM.improg.R") #### attention this is in progress
+#source("NGramLM.R") #### this is stable
+
 
 #quiz sentences
 quiz<- c("The guy in front of me just bought a pound of bacon, a bouquet, and a case of",
@@ -53,7 +55,7 @@ alternatives <- list(
 
 
 # training ngram model
-mod <- train(control=list(data="final",N=3, method="Katz", threshold=5))
+mod <- train(control=list(data="small",N=1, method="Katz", threshold=2))
 
 # generate quiz results
 Map(function(x,y) predict(mod,x,y), quiz, alternatives) # 7/10

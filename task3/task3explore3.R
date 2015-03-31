@@ -27,9 +27,6 @@ Corpus.summary <- function(corpus)
 #
 source("NGramLM.R")
 
-
-
-
 # read an english corpus
 #corpus <- VCorpus(DirSource("data/final/en_US/"))
 #small <- VCorpus(DirSource("data/small/en_US/"))

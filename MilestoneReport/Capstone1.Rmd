@@ -94,7 +94,7 @@ small <- tm_map(corpus , content_transformer(function(x) x[sample(length(x),leng
 writeCorpus(small, path = "../data/small/en_US/")
 ```
 
-Summary statistics for the smaller US English corpus are shown below, note that the number of words as now about 1 million, and the the unique number of words is reduced to about 75000, average line length, average words per line and average word length have not changed.
+Summary statistics for the smaller US English corpus are shown below, note that the number of words as now about 1 million, and the the unique number of words is reduced to about 57000, average line length, average words per line and average word length have not changed.
 
 ``` {r tab2, echo=FALSE, results='asis'}
 kable(Corpus.summary(small))
@@ -102,7 +102,7 @@ kable(Corpus.summary(small))
 
 ### 2. Exploring tokenization on small subset for English
 
-Here we evaluate 5 tokenizers from different R packages for quality and speed.
+Tokenization deals with splitting a test into individual words and other entities like numbers, punctation etc. Here we evaluate 5 tokenizers from different R packages for quality and speed.
 
 - strsplit: is a simple white space based Regular Expression tokenizer.
 
@@ -146,7 +146,7 @@ knitr::kable(tab)
 
 the RWeka tokenizer is the fastest of the 5 tokenizers evaluated, it is even faster than asimple white space regular expression tokenizer with the R strinsplit function. It tokenizes 1 million words in under a second. With this excellent speed, it provides decent quality and control over the tokenization process, it is implemented in java with an R interface and supports multi-core processing. In addition, the RWeka package also contains a NGram tokenizer, with the same controls. 
 
-Note that the openNLP tokenizer gives a superior tokenization quality especialy on some semantic entities such as numbers, names, cities etc, but it is 2 orders of magnitude slower then RWeka WordTokenizer. As prediction of names, numbers and other named entities is outside of the scope of this project, this more advanced tokenization based on annotation piplelines with Maximum Entropy annotators senteces, words, etc is overkill.  
+Note that the openNLP tokenizer gives a superior tokenization quality especialy on some semantic entities such as numbers, names, cities etc, but it is 3 orders of magnitude slower then RWeka WordTokenizer. As prediction of names, numbers and other named entities is outside of the scope of this project, this more advanced tokenization based on annotation piplelines with Maximum Entropy annotators senteces, words, etc is overkill.  
 
 __Conclusion__: In the further exploration, the RWeka tokenizers were used. 
 
@@ -188,7 +188,7 @@ kable(Corpus.summary(small))
 
 Some words are more frequent than others, here I explore what the most frequent words are in the sub-sampled US English corpus and explore the distributions of the word frequencies.
 
-The word frequencies for Blogs, News and Yweets can be readily be found by constructing a Term Document Matrix, part of the tm package functionality, and provides a sparse matrix representation of term (word) frequencies, organized with terms in rows and documents in columns. Not every word occurs in every document, the number of zeros in the matrix divided by the total elements of the matrix is the sparsity.  
+The word frequencies for Blogs, News and Tweets can be readily be found by constructing a Term Document Matrix, part of the tm package functionality, and provides a sparse matrix representation of term (word) frequencies, organized with terms in rows and documents in columns. Not every word occurs in every document, the number of zeros in the matrix divided by the total elements of the matrix is the sparsity.  
 
 ``` {r counting}
 options(mc.cores=1) # RWeka bug workaround 
@@ -317,7 +317,7 @@ kable(tab5)
 
 ### 6. Vocabulary size and coverage
 
-An important design parameter for any language modeling, is the vocabulary size to be covered. In this section I explore the relation between the size of a frequency sorted dictionary, and coverage of all word instances in the language. We should note that the considerations made in the Practical Machine Learning course regarding training and evaluation sets are very relevant. If we just estimate coverage on the total data set, we will inevitable find that if we include all observed words in our vocabulary, then we would cover all of data set. This is of course not a good estimate of the word coverage in the language. To get a better estimate, we split the data set in a training and test set. We use a frequency sorted dictionary derived from the training set to determine the coverage  of the test set. 
+An important design parameter for any language modeling is vocabulary size. In this section I explore the relation between the size of a frequency sorted dictionary, and coverage of all word instances in the language, coverage provided an upper limit to the accuracy that can be achieved by a predictive text algorithm. We should note that the considerations made in the Practical Machine Learning course regarding training and evaluation sets are very relevant. If we just estimate coverage on the total data set, we will inevitable find that if we include all observed words in our vocabulary, then we would cover all of data set. This is of course not a good estimate of the word coverage in the language. To get a better estimate, we split the data set in a training and test set. We use a frequency sorted dictionary derived from the training set to determine the coverage  of the test set. 
 
 In the plot below we show the coverage in function of the dictionary size. The blue curve is the coverage estimate obtained with the entire data set, the red curve is a better coverage estimate obtained with a training an evaluation set approach. I also indicate the 50% coverage point and the 90% coverage points.
 

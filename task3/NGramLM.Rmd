@@ -84,43 +84,120 @@ Tree       | | |
 
 ### Sparse matrices
 
-- implemented in R via the `slam` package for two dimensional matrices
+- implemented in R via the `slam` package for two dimensional matrices. Not presued.
 
-### trees
+### Trees
 
+- not persued
 
-making trigram backoff LM needs to be precomputed we'll explore creting an LM S3 class, train it and use it as a predictor
-requres tm, RWeka and slam
+## LM training
 
-``` {r class,eval=FALSE}
-library(hash)
+Katz backoff with Good-Turing discounting.
 
-NGramLM <- function(corpus, N=2) {
-  model <- list( "N" = N )
-  class(model) <- append(class(model),"NGramLM")
-  for( n in 1:N ) model[[paste0(n,"-grams")]] <- 
-                  hash(row_sums(tm::TermDocumentMatrix(corpus, 
-                                                  control=list( tokenize = function(x) RWeka::NGramTokenizer(x, RWeka::Weka_control(min = n, max = n)),
-                                                            wordLengths=c(1, Inf)))))
+Making trigram backoff LM needs to be precomputed. We'll explore an LM R-S3 class, train it and use it as a predictor.
+requres tm, RWeka and slam.
 
-  return(model)
-}
+## LM evaluations - Katz backoff on 1 million training word corpus 
 
 
-summary.NGramLM <- function(model)
-{
-  return(model$N)
-}
+N | k | # NGrams | Model Size | Training PP
+--|---|----------|------------|---------------
+1 | 0 | 57289    | 398kB      | 1734
+2 | 0 | 438925   |            | 145.8
+3 | 0 | 766002   | 31.4MB     | 18.36
+4 | 0 | 843480   | 60.1MB     | 9.04
 
-predict.NGramLM <- function(model,sentence, alts=NULL)
-{
-  return(sample(alts,1))
-}
+## Things to do
 
-# use
-mod2 <- NGramLM(small,2)
-summary(mod2)
-predict(mod2, "this is a ", c("test","pipe"))
+## Week March 30
 
-Map(function(x,y) predict(mod2,x,y), quiz, alternatives) #ugly!!! rewrite
-```
+- due April 5: peer reviews milestone reports (done)
+
+- debug Good-Turing discounting (done see task4explore4)
+
+- perplexity calculation (done.... see task4explore1, double check trigrams)
+
+- perplexity evaluation on training set with different model params (N,K) - done for N=1:4, K=0 
+
+- probablity for OOV
+
+- ngramlm print function
+
+
+- N-gram tokenization exploration, tokenizing very large corpora (100 million words) and calculating n grams
+
+- fix memory leaks due to environments and hash
+
+
+
+
+- due April 5: quiz 3 
+
+## Week April 6
+
+- 
+
+## Week April 13
+
+
+
+## Week April 20
+
+- due April 26 shiny app
+
+- due April 26 presentation
+
+## Week April 27
+
+- due May 3, peer evaluations final project
+
+
+## Schedule
+
+- N-best prediction of w given history 
+
+
+- data tables based inplementation (read up on data tables package)
+
+- benchmark hash versus data table implementation
+
+- accuracy evaluation on test corpus
+
+- tuning parameters N, voc size (accuracy vs speed and size)
+
+- other LMs : interpolated LMs (state of the art neural net and Recursive NN)
+
+- other smoothing: add-k smoothing, n-1 prior discounting, absolute discounting, keyser-ney
+
+- different tokenization with start and stop at end
+
+- adding other corpora for news and twitter
+
+- adding dictionaries
+
+- creative research: class LMs
+
+- creative research: history buffers (bag of non-stem words in the sentence )
+
+- reading up on predictive text approaches
+
+- split data in training, evaluation and test sets
+
+- download more data eg (ftp://ftp.gnu.org/gnu/aspell/dict/en/aspell6-en-7.1-0.tar.bz2)
+
+
+## Done 
+
+- subsampleing data set (100 million words) in micro (1000 words), small (1 Million), medium(3Million) and large(10 million) data sets
+
+- tokenization and cleaning piplines based on wm and Rweka
+
+- NgramLM R class based on hash
+
+- Katz backof ngram training receipe
+
+- quiz 1 (score 10/10)
+
+- quiz 2 (score 9/10)
+
+- milestone 1 report on R pubs

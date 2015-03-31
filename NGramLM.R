@@ -1,5 +1,8 @@
 # source file for the NGramLM class
 
+# see http://www.speech.sri.com/projects/srilm/manpages/ngram-discount.7.html
+
+
 require(tm)
 #library(RWeka) # don't load it, see http://stackoverflow.com/questions/17703553/bigrams-instead-of-single-words-in-termdocument-matrix-using-r-and-rweka
 require(slam)
@@ -13,11 +16,6 @@ ngtail <- function(ng,k=1) { tmp <- unlist(strsplit(ng," ",fixed=TRUE))
 ngfirst <- function(ng,k=1) return(paste(head(unlist(strsplit(ng," ",fixed=TRUE)),k),collapse=" ")) # first k words  of n gram 
 nglast  <- function(ng,k=1) return(paste(tail(unlist(strsplit(ng," ",fixed=TRUE)),k),collapse=" ")) # last k words of n gram 
 
-# good-turing discounting factor (without frequency smoothing, just linear interpolation)
-GoodTuringDisc <- function (cnt) {
-  tab <- table(cnt)
-  (1 + 1/cnt) * approx(as.integer(names(tab)),tab,cnt+1)$y / approx(as.integer(names(tab)),tab,cnt)$y
-}
 
 # good-turing discounting with smoothing 
 GoodTuringDisc <- function (cnt) {
@@ -25,9 +23,16 @@ GoodTuringDisc <- function (cnt) {
   fit <- lm(log(Freq) ~ log(cnt), data=tab)
   (1 + 1/cnt) * exp(predict(fit, data.frame(cnt=cnt+1))) / exp(predict(fit, data.frame(cnt=cnt)))
 }
+# good-turing probability estimate for number of OOV given 
+GoodTuringOOV <- function (cnt,threshold) {
+  tab <- transform(as.data.frame(table(cnt)),cnt=as.integer(cnt)) 
+  fit <- lm(log(Freq) ~ log(cnt), data=tab)
+  sum(exp(predict(fit, data.frame(cnt=1:(threshold+1)))) 
+}
+
 
 # NGram LM R class constructor
-NGramLM <- function(corpus, N=2, threshold=0) 
+NGramLM <- function(corpus, N=2, threshold=0, debug=FALSE) 
 {
   model <- list( "N" = N )
   class(model) <- append(class(model),"NGramLM")
@@ -49,6 +54,9 @@ NGramLM <- function(corpus, N=2, threshold=0)
   model[["Pbo1"]] <- hash(Map(function (cnt,d) d * cnt / V, 
                               values(model[["1-grams"]],keys=ngkeys), 
                               values(model[["disc1"]],keys=ngkeys)))
+  
+  #calculate OOV prob estimate (Good-Turing)
+  model[["Pbo1"]][["<OOV>"]] <- / V
   if(N<2) return(model)
   
   # hash table with followers (n-1)gram + word -> ngram followers
@@ -78,12 +86,22 @@ NGramLM <- function(corpus, N=2, threshold=0)
                                          values(model[[paste0("disc",n)]],keys=ngkeys))) 
   }
   clear(followers)
-  # we can clear counts and discounts as well actually, we keep them for debugging
+  # clear counts and discounts,  we keep them for debugging
+  if(!debug) sapply(grep("grams|disc",names(model),value=TRUE),function(h) clear(model[[h]]))
   return(model)
 }
 
-# NGramLM class methods
-summary.NGramLM <- function(model) return(model$N)
+# NGramLM class methods: summary
+summary.NGramLM <- function(model) return(paste("NGramLM language model, N =",model$N))
+
+# NGramLM class methods: print
+print.NGramLM <- function(model) return(paste("NGramLM language model, N =",model$N))
+
+# NGramLM class method: clear: removing hash R environments 
+clear.NGramLM <- function(model) {
+sapply(grep("grams|Pbo|disc|alpha",names(model),value=TRUE),
+       function(h) clear(model[[h]]))
+}
 
 # get the number of Ngrams in the LM
 getNumberNGrams <- function(model,N) UseMethod("getNumberNGrams",model)
@@ -100,16 +118,19 @@ get2grams.NGramLM <- function(model,startlist)
                                          keys(model[["2-grams"]]),value=TRUE))
 
 
-# Katz back-off Probability of word sequence, history is n-1 gram
-# model   : NGramLM model
-# history : character vector with history is n-1 gram
-# w       : word 
-# return Pbo( w | history )
+#' Katz back-off Probability of a word given a history of n-1 words
+#' 
+#' @param model   : an NGramLM model
+#' @param history : character vector with history  c("w1", "w2", ... )
+#' @param w       : word 
+#' @return Pbo ( w | history ) the probability of observing w given history
 
 KatzPbo <- function(model, history ,w) UseMethod("KatzPbo",model)
 KatzPbo.NGramLM <- function(model, history, w) { 
+  if(length(history) == 0) return(ifelse(has.key(w,model[["Pbo1"]]), # unigram probability or good-turing for OOV
+                                         model[["Pbo1"]][[w]],
+                                         model[["Pbo1"]][["<OOV>"]]))  
   if(length(history) > model$N-1) history <- tail(history, model$N-1)    # truncate history to max N-1gram (if needed)
-  if(length(history) == 0) return(model[["Pbo1"]][[w]])                  # unigram probability
   n <- length(history) + 1 
   ng <- paste(c(history,w),collapse=" ")  # ngram hash key
   n1g <- paste(history,collapse=" ")      # history (n-1)gram hash key 
@@ -117,6 +138,26 @@ KatzPbo.NGramLM <- function(model, history, w) {
          model[[paste0("Pbo",n)]][[ng]],  # ngram probability
          ifelse(has.key(n1g, model[[ paste0("alpha",n-1) ]]), model[[ paste0("alpha",n-1) ]][[ n1g ]] , 1) * 
             KatzPbo.NGramLM(model, tail(history, length(history)-1), w))   # backoff * (n-1)gram probability
+}
+
+#' Perplexity of a token sequence with NGram model
+#' 
+#' @param model   : an NGramLM model
+#' @param tokens  : character vector with words  c("w1", "w2", ... )
+#' @return Perplexity of the word sequence ie. geometric mean of the 1/probabilities of the individual words in context
+
+Perplexity <- function(model, tokens) UseMethod("Perplexity",model)
+Perplexity.NGramLM <- function (model,tokens) exp(-sum(mapply(function(w,history) log(KatzPbo.NGramLM(model, history, w)),
+                                                              tokens,
+                                                              lapply(1:length(tokens),function(n) tail(head(tokens,n-1),model$N-1)) )) /length(tokens))
+
+# Perplexity on a corpus using a NGram model
+CorpusPerplexity  <- function(model, corpus)  UseMethod("CorpusPerplexity",model)
+CorpusPerplexity.NGramLM  <- function(model, corpus) {
+  mergedcorp <- VCorpus(VectorSource(unlist(lapply(corpus,content))))  # merge corpus so that every line in all docs is seperate document
+  tokenCorp <- tm_map(mergedcorp, RWeka::WordTokenizer)                # tokenize the corpus: each doc is now a token vector
+  tokenCorp <- tm_filter(tokenCorp, function(x) (length(x) > 0))       # remove zero length docs
+  exp(weighted.mean(log(sapply(tokenCorp, function(tokens) Perplexity(model,tokens))), sapply(tokenCorp,length))) 
 }
 
 
