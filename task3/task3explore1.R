@@ -207,7 +207,7 @@ Map(predict2bo, quiz, alternatives) # only 10/10 with but nonsensical ansers for
 
 
 
-# medium size corpus 10 million words
+# create medium size corpus 10 million words
 corpus <- VCorpus(DirSource("data/final/en_US/"))
 medium <- tm_map(corpus , content_transformer(function(x) x[sample(length(x),length(x)/10)])) 
 writeCorpus(medium, path = "data/medium/en_US/")

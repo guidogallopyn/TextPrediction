@@ -6,6 +6,8 @@
 *.exe
 *.o
 *.so
+*.pyc
+
  
 # Packages #
 ############
@@ -39,16 +41,23 @@ Thumbs.db
 # R and RSudio
 ################
 .Rhistory
+*.RData
+.metadata/
+.project
+.pydevproject
 
 # project specific
 ###################
+*.LM
 data/
+counts/
 models/
 models.old/
+shinyapp/models/
 Capstone1.knit.md
 MilestoneReport/.RData
 MilestoneReport/Capstone1.html
 MilestoneReport/Capstone1_cache/
 MilestoneReport/Capstone1_files/
 task3/NGramLM_cache/
-
+task3/NGramLM.html

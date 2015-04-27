@@ -1,0 +1,129 @@
+Coursera Data Science Capstone
+========================================================
+author: Guido Gallopyn
+date: 4-26-2015
+width: 1422
+height: 800
+
+Text Prediction
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=FALSE)
+
+library(ggplot2)
+library(Hmisc)
+library(dplyr)
+library(tidyr)
+library(xtable)
+
+load(file=file.path("../acc", "acc.summary.RData"))
+load(file=file.path(".", "mod.summary.RData"))
+```
+
+Overview
+========================================================
+
+- This project was done entirely in R using tm, RWeka, hash, dplyr and ggplot2 packages. (excellent LM tool-kits are available from [CMU](http://www.speech.cs.cmu.edu/SLM_info.html), [SRI](http://www.speech.sri.com/projects/srilm/), but I preferred to dig into R text processing and NLP)
+
+- An S3 object was developed for NGram language models with arbitrary N. 
+   + [Katz back-off model training](http://en.wikipedia.org/wiki/Katz's_back-off_model), 
+   + Prediction with BestScore and NBestScore calculations. 
+   + Performance evaluation, including Coverage, Perplexity and prediction Accuracy
+   + [ARPA LM format](http://www.speech.sri.com/projects/srilm/manpages/ngram-format.5.html) import/export 
+   + makes extensive use of [hash package](http://cran.r-project.org/web/packages/hash/hash.pdf) to efficiently store and access n-gram counts, probabilities, back-off weights, following word lists and a word [trie data structure](http://en.wikipedia.org/wiki/Trie). 
+
+- with a 3 character prefix, an auto-complete feature based on this moel can predict the right next word 2 out of 3 times.
+
+- a [shiny App demo](https://senseiguido.shinyapps.io/TextPrediction/) was build to showcase the Text Predictor.  
+
+
+Algorithm
+========================================================
+
+Text prediction is the task of selecting the word $w_{i}$ with maximum probability $p$ using left context $w_{i-n+1}... w_{i-1}$ and a noisy channel observation $o$ of the word $w_{i}$n as predictors.
+
+Via Bayes Rule we get: 
+
+$$\hat{w} = \underset{w_{i} \in Words} {argmax}~(~(p( o \mid w_{i} ) \cdot p( w_{i} \mid w_{i-n+1}... w_{i-1} )~)$$
+
+Let $o$ be a $prefix$ of $w_{i}$, then 
+
+$$\hat{w} = \underset{w_{i} \in \{w~:~isPrefix(prefix,w) , w \in Words\ \} } {argmax} ~p( w_{i} \mid w_{i-n+1}... w_{i-1} )$$
+
+$p( w_{i} \mid w_{i-n+1}... w_{i-1})$ : [n-gram language model](https://web.stanford.edu/class/cs124/lec/languagemodeling.pdf)
+
+Note: observations other than word prefixes are commonly in use, including keyboard swipe, pen-strokes in hand writing recognition, word images in OCR, and voice in speech recognition.  
+
+Language Model Training
+========================================================
+
+- As mentioned in the [Milestone Report](https://rpubs.com/SenseiGuido/66682), the Capstone data was cleaned and tokenized with tm and RWeka
+
+- The full text corpus (~100M words) was split in training (90%) and evaluation (10%), then the training corpus was sub-sampled in 10, 3 and 1 million word corpora, final models were trained on the 10 million word training corpus.   
+
+- Model building and evaluation experiments were run to measure Coverage, Perplexity, Prediction Accuracy, LM-Size and prediction speed in function of word-frequency threshold K, Ngram-order N and training corpus size.
+
+- Finally a "small"", "medium" and "large"" language model were selected for use with the shiny app
+
+```{r ModelTab, echo=FALSE,results="asis"}
+print(xtable(mutate(modtab[1:7],N=as.integer(N),K=as.integer(K),
+                    uniGrams=as.integer(uniGrams),biGrams=as.integer(biGrams),triGrams=as.integer(triGrams)
+                    )), type="html")
+```
+
+
+Performance Evaluation
+===
+
+```{r Accuracy, echo=FALSE, fig.width=12, fig.height=6}
+
+modtab %>% select(K,Model) %>%
+           full_join(accuracy,by="K") %>%
+           filter((N==3 & K==7) | (N==3 & K==20) | (N==2 & K==40)) %>%
+           ggplot(aes(factor(PrefixLen), Accuracy, group=Model,colour=Model)) + 
+           stat_summary(fun.data="mean_cl_normal",width=2) +
+#           stat_summary(fun.y=mean, geom ="point",size=5) +
+           stat_summary(fun.y=mean, geom ="line") +
+           theme_bw() +
+           xlab("Prefix Character Length") +
+           ylab("Prediction Accuracy")
+```
+
+```{r AccuracyTab, echo=FALSE,results="asis"}
+print(xtable(mutate(modtab[c(1,2,8:12)],N=as.integer(N))), type="html")
+```
+
+Note: prefix length zero means model only uses previous N-1 words
+***
+<small>
+- Accuracy was measured on a 1% sub-sample of the evaluation corpus (~ 100k words) for word-prefix lengths from 0 to 4 
+
+- 10 bootstrap iterations were run to estimate a mean and a standard error of the prediction accuracy.  
+
+- Observations and Conclusions
+   + The best models for all prefix lengths is the large tri-gram model.
+   + using only trigram word history, the best model is only ~13% accuracy, best model has ~4% absolute increase in accuracy over the small model
+   + observation of a letter increases accuracy with ~15%, upto 3 letters, then accuracy increase slows down
+   
+</small>
+
+Show-Case Application
+========================================================
+
+ 
+ ![Shiny App Screen Shot](Screen Shot 2015-04-25.png)
+ 
+ ***
+ <small>
+ a [shiny App demo](https://senseiguido.shinyapps.io/TextPrediction/) was build to show-case the Text Predictor. 
+ 
+- it takes as input a phrase (multiple words) in a text box input and outputs a prediction of the top-5 next best words (best on top)
+
+- it provides an auto-complete demonstration (see screenshot) that simulates a mobile keyboard App, rthat provides top 5 predicted words as users type. This allows for an evaluation of typing performance inprovement and gives a good sense of the prediction speed.
+
+- it provides a glimpse under the hood, with summary statistics of the underlying language models.
+ 
+</small> 
+ 
+
+ 
